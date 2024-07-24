@@ -1,9 +1,10 @@
 package main
 
 import (
-	"fmt"
+	"github.com/xalbd/blackjack-server/game"
 )
 
 func main() {
-	fmt.Printf("Your lucky number is 15")
+	table := game.NewTable(2)
+	table.Play()
 }

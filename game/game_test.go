@@ -20,7 +20,8 @@ func TestNewDeck(t *testing.T) {
 
 func TestShuffle(t *testing.T) {
 	deck := NewDeck()
-	shuffled := Shuffle(NewDeck())
+	shuffled := NewDeck()
+	shuffled.Shuffle()
 	seen := make(map[Card]uint8)
 
 	if len(deck) != len(shuffled) {
@@ -58,19 +59,5 @@ func TestDeal(t *testing.T) {
 	dealt, ok = deck.Deal()
 	if ok {
 		t.Fatalf("Deal() returned %v, expected false", dealt)
-	}
-}
-
-func TestTableDeal(t *testing.T) {
-	table := NewTable()
-
-	table.Deal()
-	if len(table.deck) != 48 || len(table.player) != 2 || len(table.dealer) != 2 {
-		t.Fatalf("Table.Deal() did not deal 2 cards to player and dealer")
-	}
-
-	table.Deal()
-	if len(table.deck) != 44 || len(table.player) != 4 || len(table.dealer) != 4 {
-		t.Fatalf("Table.Deal() did not deal 2 more cards to player and dealer")
 	}
 }

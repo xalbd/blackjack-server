@@ -21,7 +21,7 @@ func TestNewDeck(t *testing.T) {
 func TestShuffle(t *testing.T) {
 	deck := makeDeck(1)
 	shuffled := makeDeck(1)
-	shuffled.Shuffle()
+	shuffled.shuffle()
 	seen := make(map[Card]uint8)
 
 	if len(deck.cards) != len(shuffled.cards) {
@@ -46,12 +46,12 @@ func TestShuffle(t *testing.T) {
 func TestDeal(t *testing.T) {
 	deck := Deck{cards: []Card{{Diamond, Three}, {Club, Four}}}
 
-	dealt := deck.Deal()
+	dealt := deck.deal()
 	if (dealt != Card{Diamond, Three}) {
 		t.Fatalf("Deal() returned %v, expected %v", dealt, Card{Spade, Ace})
 	}
 
-	dealt = deck.Deal()
+	dealt = deck.deal()
 	if (dealt != Card{Club, Four}) {
 		t.Fatalf("Deal() returned %v, expected %v", dealt, Card{Club, Four})
 	}

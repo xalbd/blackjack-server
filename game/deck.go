@@ -45,8 +45,9 @@ type Deck struct {
 }
 
 type Hand struct {
-	cards []Card
-	bet   int
+	cards  []Card
+	bet    int
+	active bool
 }
 
 func makeDeck(decks int) Deck {
@@ -62,16 +63,16 @@ func makeDeck(decks int) Deck {
 	return Deck{cards: cards, index: 0}
 }
 
-func (d *Deck) Shuffle() {
+func (d *Deck) shuffle() {
 	c := d.cards
 	rand.Shuffle(len(c), func(i, j int) {
 		c[i], c[j] = c[j], c[i]
 	})
 }
 
-func (d *Deck) Deal() Card {
+func (d *Deck) deal() Card {
 	if d.index >= len(d.cards) {
-		d.Shuffle()
+		d.shuffle()
 		d.index = 0
 	}
 
@@ -80,11 +81,11 @@ func (d *Deck) Deal() Card {
 	return card
 }
 
-func (d *Deck) DealTo(h *Hand) {
-	h.cards = append(h.cards, d.Deal())
+func (d *Deck) dealTo(h *Hand) {
+	h.cards = append(h.cards, d.deal())
 }
 
-func (c Card) Value() int {
+func (c Card) value() int {
 	switch c.Rank {
 	case Jack, Queen, King:
 		return 10
@@ -97,8 +98,14 @@ func (c Card) String() string {
 	switch c.Rank {
 	case Ace:
 		return "A"
+	case Jack:
+		return "J"
+	case Queen:
+		return "Q"
+	case King:
+		return "K"
 	default:
-		return strconv.Itoa(c.Value())
+		return strconv.Itoa(c.value())
 	}
 }
 
@@ -113,15 +120,11 @@ func (h Hand) String() string {
 	return output
 }
 
-func (h *Hand) upCard() Card {
-	return h.cards[1]
-}
-
-func (h *Hand) getScores() []int {
+func (h *Hand) scores() []int {
 	hardTotal, aceCount := 0, 0
 
 	for _, c := range h.cards {
-		hardTotal += c.Value()
+		hardTotal += c.value()
 
 		if c.Rank == Ace {
 			aceCount++
@@ -131,23 +134,31 @@ func (h *Hand) getScores() []int {
 	scores := []int{}
 	if hardTotal <= 21 {
 		scores = append(scores, hardTotal)
-
-		if aceCount > 0 && hardTotal+10 <= 21 {
-			scores = append(scores, hardTotal+10)
-		}
+	}
+	if aceCount > 0 && hardTotal+10 <= 21 {
+		scores = append(scores, hardTotal+10)
 	}
 
 	return scores
 }
 
+func (h *Hand) bestScore() int {
+	scores := h.scores()
+	best := 0
+	if len(scores) > 0 {
+		best = slices.Max(scores)
+	}
+	return best
+}
+
 func (h *Hand) hasBlackjack() bool {
-	return len(h.cards) == 2 && slices.Contains(h.getScores(), 21)
+	return len(h.cards) == 2 && slices.Contains(h.scores(), 21)
 }
 
 func (h *Hand) hasBust() bool {
-	return len(h.getScores()) == 0
+	return len(h.scores()) == 0
 }
 
 func (h *Hand) canSplit() bool {
-	return len(h.cards) == 2 && h.cards[0].Value() == h.cards[1].Value()
+	return len(h.cards) == 2 && h.cards[0].value() == h.cards[1].value()
 }

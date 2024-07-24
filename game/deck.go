@@ -39,43 +39,49 @@ type Card struct {
 	Rank
 }
 
-type Deck []Card
+type Deck struct {
+	cards []Card
+	index int
+}
 
 type Hand struct {
 	cards []Card
 	bet   int
 }
 
-func NewDeck() Deck {
-	var cards Deck
-	for s := Spade; s <= Club; s++ {
-		for r := Ace; r <= King; r++ {
-			cards = append(cards, Card{Suit: s, Rank: r})
+func makeDeck(decks int) Deck {
+	var cards []Card
+	for range decks {
+		for s := Spade; s <= Club; s++ {
+			for r := Ace; r <= King; r++ {
+				cards = append(cards, Card{Suit: s, Rank: r})
+			}
 		}
 	}
-	return cards
+
+	return Deck{cards: cards, index: 0}
 }
 
 func (d *Deck) Shuffle() {
-	rand.Shuffle(len(*d), func(i, j int) {
-		(*d)[i], (*d)[j] = (*d)[j], (*d)[i]
+	c := d.cards
+	rand.Shuffle(len(c), func(i, j int) {
+		c[i], c[j] = c[j], c[i]
 	})
 }
 
-func (d *Deck) Deal() (Card, bool) {
-	if len(*d) == 0 {
-		return Card{}, false
+func (d *Deck) Deal() Card {
+	if d.index >= len(d.cards) {
+		d.Shuffle()
+		d.index = 0
 	}
 
-	card := (*d)[len(*d)-1]
-	(*d) = (*d)[:len(*d)-1]
-	return card, true
+	card := d.cards[d.index]
+	d.index++
+	return card
 }
 
-func Deal(d *Deck, h *Hand) {
-	if dealt, ok := d.Deal(); ok {
-		h.cards = append(h.cards, dealt)
-	}
+func (d *Deck) DealTo(h *Hand) {
+	h.cards = append(h.cards, d.Deal())
 }
 
 func (c Card) Value() int {

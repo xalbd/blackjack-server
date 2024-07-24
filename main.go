@@ -6,5 +6,7 @@ import (
 
 func main() {
 	table := game.NewTable(2)
-	table.Play()
+	for {
+		table.PlayRound()
+	}
 }

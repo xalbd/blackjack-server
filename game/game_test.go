@@ -3,14 +3,14 @@ package game
 import "testing"
 
 func TestNewDeck(t *testing.T) {
-	deck := NewDeck()
+	deck := makeDeck(1)
 	seen := make(map[Card]bool)
 
-	if len(deck) != 52 {
-		t.Fatalf("NewDeck() returned a deck with %d cards, expected 52", len(deck))
+	if len(deck.cards) != 52 {
+		t.Fatalf("NewDeck() returned a deck with %d cards, expected 52", len(deck.cards))
 	}
 
-	for _, card := range deck {
+	for _, card := range deck.cards {
 		if seen[card] {
 			t.Fatalf("NewDeck() returned a deck with duplicate card %v", card)
 		}
@@ -19,20 +19,20 @@ func TestNewDeck(t *testing.T) {
 }
 
 func TestShuffle(t *testing.T) {
-	deck := NewDeck()
-	shuffled := NewDeck()
+	deck := makeDeck(1)
+	shuffled := makeDeck(1)
 	shuffled.Shuffle()
 	seen := make(map[Card]uint8)
 
-	if len(deck) != len(shuffled) {
-		t.Fatalf("Shuffle() returned a deck with %d cards, expected %d", len(shuffled), len(deck))
+	if len(deck.cards) != len(shuffled.cards) {
+		t.Fatalf("Shuffle() returned a deck with %d cards, expected %d", len(shuffled.cards), len(deck.cards))
 	}
 
-	for _, card := range deck {
+	for _, card := range deck.cards {
 		seen[card]++
 	}
 
-	for _, card := range shuffled {
+	for _, card := range shuffled.cards {
 		seen[card]++
 	}
 
@@ -44,20 +44,15 @@ func TestShuffle(t *testing.T) {
 }
 
 func TestDeal(t *testing.T) {
-	deck := Deck{{Diamond, Three}, {Club, Four}}
+	deck := Deck{cards: []Card{{Diamond, Three}, {Club, Four}}}
 
-	dealt, ok := deck.Deal()
-	if (!ok || dealt != Card{Club, Four} || len(deck) != 1 || deck[0] != Card{Diamond, Three}) {
+	dealt := deck.Deal()
+	if (dealt != Card{Diamond, Three}) {
 		t.Fatalf("Deal() returned %v, expected %v", dealt, Card{Spade, Ace})
 	}
 
-	dealt, ok = deck.Deal()
-	if (!ok || dealt != Card{Diamond, Three} || len(deck) != 0) {
+	dealt = deck.Deal()
+	if (dealt != Card{Club, Four}) {
 		t.Fatalf("Deal() returned %v, expected %v", dealt, Card{Club, Four})
-	}
-
-	dealt, ok = deck.Deal()
-	if ok {
-		t.Fatalf("Deal() returned %v, expected false", dealt)
 	}
 }

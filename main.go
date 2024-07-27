@@ -1,12 +1,9 @@
 package main
 
 import (
-	"github.com/xalbd/blackjack-server/game"
+	"github.com/xalbd/blackjack-server/server"
 )
 
 func main() {
-	table := game.NewTable(2)
-	for {
-		table.PlayRound()
-	}
+	server.StartServer()
 }

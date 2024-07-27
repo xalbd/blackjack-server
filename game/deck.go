@@ -45,9 +45,9 @@ type Deck struct {
 }
 
 type Hand struct {
-	cards  []Card
-	bet    int
-	active bool
+	Cards  []Card
+	Bet    int
+	Active bool
 }
 
 func makeDeck(decks int) Deck {
@@ -82,7 +82,7 @@ func (d *Deck) deal() Card {
 }
 
 func (d *Deck) dealTo(h *Hand) {
-	h.cards = append(h.cards, d.deal())
+	h.Cards = append(h.Cards, d.deal())
 }
 
 func (c Card) value() int {
@@ -111,7 +111,7 @@ func (c Card) String() string {
 
 func (h Hand) String() string {
 	output := ""
-	for i, c := range h.cards {
+	for i, c := range h.Cards {
 		if i > 0 {
 			output += ", "
 		}
@@ -123,7 +123,7 @@ func (h Hand) String() string {
 func (h *Hand) scores() []int {
 	hardTotal, aceCount := 0, 0
 
-	for _, c := range h.cards {
+	for _, c := range h.Cards {
 		hardTotal += c.value()
 
 		if c.Rank == Ace {
@@ -152,7 +152,7 @@ func (h *Hand) bestScore() int {
 }
 
 func (h *Hand) hasBlackjack() bool {
-	return len(h.cards) == 2 && slices.Contains(h.scores(), 21)
+	return len(h.Cards) == 2 && slices.Contains(h.scores(), 21)
 }
 
 func (h *Hand) hasBust() bool {
@@ -160,5 +160,5 @@ func (h *Hand) hasBust() bool {
 }
 
 func (h *Hand) canSplit() bool {
-	return len(h.cards) == 2 && h.cards[0].value() == h.cards[1].value()
+	return len(h.Cards) == 2 && h.Cards[0].value() == h.Cards[1].value()
 }

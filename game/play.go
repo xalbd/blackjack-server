@@ -5,72 +5,64 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 )
 
 type Player struct {
-	hands []Hand
-	money int
+	Hands []Hand
+	Money int
+}
+
+func (p Player) String() string {
+	return "Money: " + strconv.Itoa(p.Money)
 }
 
 type Table struct {
 	deck    Deck
 	dealer  Hand
-	players []Player
+	Players []Player
 	minBet  int
+	status  int
 }
 
-func NewTable(p int) Table {
+func NewTable() Table {
 	deck := makeDeck(1)
 	deck.shuffle()
-
-	players := make([]Player, p)
-	for i := range players {
-		players[i] = Player{hands: []Hand{}, money: 1000}
-	}
 
 	return Table{
 		deck:    deck,
 		dealer:  Hand{},
-		players: players,
+		Players: []Player{},
 		minBet:  10,
 	}
 }
 
-func (t *Table) takeBets() {
+func (t *Table) EnterBet(player int, bet int) {
+	if bet < t.minBet || bet > t.Players[player].Money {
+		return
+	}
+
+	t.Players[player].Money -= bet
+	t.Players[player].Hands = append(t.Players[player].Hands, Hand{Bet: bet, Active: true})
+}
+
+func (t *Table) ResetHands() {
 	t.dealer = Hand{}
-	for i := range t.players {
-		t.players[i].hands = []Hand{}
-		for t.players[i].money > t.minBet {
-			fmt.Printf("Player %v has $%v. Enter bet amount (min %v) or 0 to end betting\n", i, t.players[i].money, t.minBet)
-
-			var bet int
-			fmt.Scan(&bet)
-
-			if bet == 0 {
-				break
-			}
-
-			if bet < t.minBet || bet > t.players[i].money {
-				fmt.Println("Invalid bet.")
-				continue
-			}
-
-			t.players[i].money -= bet
-			t.players[i].hands = append(t.players[i].hands, Hand{bet: bet, active: true})
-		}
+	for i := range t.Players {
+		t.Players[i].Hands = []Hand{}
 	}
 }
 
 func (t *Table) dealAll() {
 	totalHands := 1
-	for i := range t.players {
-		totalHands += len(t.players[i].hands)
+	for i := range t.Players {
+		totalHands += len(t.Players[i].Hands)
 	}
 
 	for range 2 {
-		for i := range t.players {
-			for j := range t.players[i].hands {
-				t.deck.dealTo(&t.players[i].hands[j])
+		for i := range t.Players {
+			for j := range t.Players[i].Hands {
+				t.deck.dealTo(&t.Players[i].Hands[j])
 			}
 		}
 		t.deck.dealTo(&t.dealer)
@@ -78,9 +70,7 @@ func (t *Table) dealAll() {
 }
 
 func (t *Table) PlayRound() {
-	t.takeBets()
-	t.dealAll()
-	fmt.Printf("Dealer: %v + Hole\n", t.dealer.cards[1])
+	fmt.Printf("Dealer: %v + Hole\n", t.dealer.Cards[1])
 
 	// check for dealer blackjack
 	if t.dealer.hasBlackjack() {
@@ -92,14 +82,14 @@ func (t *Table) PlayRound() {
 	reader := bufio.NewReader(os.Stdin)
 
 	// player turn
-	for i := range t.players {
-		player := &t.players[i]
-		for j := 0; j < len(player.hands); j++ {
-			current := &player.hands[j]
+	for i := range t.Players {
+		player := &t.Players[i]
+		for j := 0; j < len(player.Hands); j++ {
+			current := &player.Hands[j]
 			printHand(i, j, current)
 
 			// fill in cards (i.e. previously split)
-			for range 2 - len(current.cards) {
+			for range 2 - len(current.Cards) {
 				t.deck.dealTo(current)
 				printHand(i, j, current)
 			}
@@ -160,34 +150,34 @@ func (t *Table) dealerTurn() {
 
 	if t.dealer.hasBust() {
 		fmt.Println("Dealer busts!")
-		for i := range t.players {
-			player := &t.players[i]
-			for j := range t.players[i].hands {
-				current := &player.hands[j]
+		for i := range t.Players {
+			player := &t.Players[i]
+			for j := range t.Players[i].Hands {
+				current := &player.Hands[j]
 
-				if current.active && !current.hasBust() {
-					player.money += 2 * current.bet
+				if current.Active && !current.hasBust() {
+					player.Money += 2 * current.Bet
 				}
 			}
 		}
 	} else {
 		dealerScore := t.dealer.bestScore()
-		for i := range t.players {
-			player := &t.players[i]
-			for j := range t.players[i].hands {
-				current := &player.hands[j]
+		for i := range t.Players {
+			player := &t.Players[i]
+			for j := range t.Players[i].Hands {
+				current := &player.Hands[j]
 
-				if !current.active {
+				if !current.Active {
 					continue
 				}
 
 				switch playerScore := current.bestScore(); {
 				case playerScore > dealerScore:
 					fmt.Printf("Player %v Hand %v wins!\n", i, j)
-					player.money += 2 * current.bet
+					player.Money += 2 * current.Bet
 				case playerScore == dealerScore:
 					fmt.Printf("Player %v Hand %v pushes!\n", i, j)
-					player.money += current.bet
+					player.Money += current.Bet
 				default:
 					fmt.Printf("Player %v Hand %v loses!\n", i, j)
 				}
@@ -208,15 +198,15 @@ func hit(hand *Hand, deck *Deck) {
 
 // returns whether player has enough money to double a given hand
 func (p Player) canDouble(hand *Hand) bool {
-	return p.money >= hand.bet
+	return p.Money >= hand.Bet
 }
 
 // attempts to double a hand, returns whether double was successful
 func double(hand *Hand, player *Player, deck *Deck) bool {
 	if player.canDouble(hand) {
 		deck.dealTo(hand)
-		player.money -= hand.bet
-		hand.bet *= 2
+		player.Money -= hand.Bet
+		hand.Bet *= 2
 		return true
 	}
 	return false
@@ -224,14 +214,14 @@ func double(hand *Hand, player *Player, deck *Deck) bool {
 
 // attempts to split a hand, returns whether split was successful
 func split(handIndex int, player *Player, deck *Deck) bool {
-	oldHand := &player.hands[handIndex]
+	oldHand := &player.Hands[handIndex]
 
 	if oldHand.canSplit() && player.canDouble(oldHand) {
-		newHand := Hand{cards: []Card{oldHand.cards[1]}, bet: oldHand.bet, active: true}
-		oldHand.cards = oldHand.cards[:1]
+		newHand := Hand{Cards: []Card{oldHand.Cards[1]}, Bet: oldHand.Bet, Active: true}
+		oldHand.Cards = oldHand.Cards[:1]
 		deck.dealTo(oldHand)
 
-		player.hands = slices.Insert(player.hands, handIndex+1, newHand)
+		player.Hands = slices.Insert(player.Hands, handIndex+1, newHand)
 		return true
 	}
 	return false
@@ -242,8 +232,8 @@ func split(handIndex int, player *Player, deck *Deck) bool {
 func bust(hand *Hand) bool {
 	if hand.hasBust() {
 		fmt.Println("Player has bust!")
-		hand.bet = 0
-		hand.active = false
+		hand.Bet = 0
+		hand.Active = false
 		return true
 	}
 	return false
@@ -254,9 +244,9 @@ func bust(hand *Hand) bool {
 func blackjack(hand *Hand, player *Player) bool {
 	if hand.hasBlackjack() {
 		fmt.Println("Player has blackjack!")
-		player.money += (5 * hand.bet) / 2
-		hand.bet = 0
-		hand.active = false
+		player.Money += (5 * hand.Bet) / 2
+		hand.Bet = 0
+		hand.Active = false
 		return true
 	}
 	return false

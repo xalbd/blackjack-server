@@ -4,6 +4,8 @@ import (
 	"math/rand"
 	"slices"
 	"strconv"
+
+	"github.com/google/uuid"
 )
 
 type Suit uint8
@@ -45,9 +47,9 @@ type Deck struct {
 }
 
 type Hand struct {
-	Cards  []Card
-	Bet    int
-	Active bool
+	Cards    []Card
+	Bet      int
+	PlayerId uuid.UUID
 }
 
 func makeDeck(decks int) Deck {
@@ -64,9 +66,9 @@ func makeDeck(decks int) Deck {
 }
 
 func (d *Deck) shuffle() {
-	c := d.cards
-	rand.Shuffle(len(c), func(i, j int) {
-		c[i], c[j] = c[j], c[i]
+	cards := d.cards
+	rand.Shuffle(len(cards), func(i, j int) {
+		cards[i], cards[j] = cards[j], cards[i]
 	})
 }
 
@@ -157,8 +159,4 @@ func (h *Hand) hasBlackjack() bool {
 
 func (h *Hand) hasBust() bool {
 	return len(h.scores()) == 0
-}
-
-func (h *Hand) canSplit() bool {
-	return len(h.Cards) == 2 && h.Cards[0].value() == h.Cards[1].value()
 }

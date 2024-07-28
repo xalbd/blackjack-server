@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/xalbd/blackjack-server/game"
 )
@@ -14,24 +15,26 @@ var upgrader = websocket.Upgrader{
 }
 
 type command struct {
-	message string
-	player  int
+	message  []byte
+	playerId uuid.UUID
 }
 
 type broadcast struct {
-	Id      int
-	Players []game.Player
+	Id         uuid.UUID
+	ActiveHand int
+	Players    []game.Player
+	Hands      []game.Hand
 }
 
-type Room struct {
-	clients   map[*websocket.Conn]int
+type room struct {
+	clients   map[*websocket.Conn]uuid.UUID
 	commands  chan command
 	broadcast chan broadcast
 }
 
 func StartServer() {
-	server := Room{
-		make(map[*websocket.Conn]int),
+	server := room{
+		make(map[*websocket.Conn]uuid.UUID),
 		make(chan command),
 		make(chan broadcast),
 	}
@@ -43,7 +46,7 @@ func StartServer() {
 	http.ListenAndServe(":8080", nil)
 }
 
-func (room *Room) handleConnections(w http.ResponseWriter, r *http.Request) {
+func (room *room) handleConnections(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("upgrade:", err)
@@ -54,8 +57,7 @@ func (room *Room) handleConnections(w http.ResponseWriter, r *http.Request) {
 		delete(room.clients, c)
 	}()
 
-	room.clients[c] = len(room.clients)
-	room.commands <- command{"new", room.clients[c]}
+	room.clients[c] = uuid.New()
 
 	for {
 		_, message, err := c.ReadMessage()
@@ -65,29 +67,22 @@ func (room *Room) handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Printf("recv: %s", message)
 
-		room.commands <- command{string(message), room.clients[c]}
+		room.commands <- command{message, room.clients[c]}
 	}
 }
 
-func (room *Room) startTable() {
+func (room *room) startTable() {
 	table := game.NewTable()
 	table.ResetHands()
 
 	for {
 		command := <-room.commands
-		if command.message == "new" {
-			for len(table.Players) <= command.player {
-				table.Players = append(table.Players, game.Player{Money: 1000})
-			}
-			room.broadcast <- broadcast{Players: table.Players}
-			continue
-		}
-		table.HandleCommand(command.player, command.message)
-		room.broadcast <- broadcast{Players: table.Players}
+		table.HandleCommand(command.playerId, command.message)
+		room.broadcast <- broadcast{Players: table.Players, Hands: table.Hands, ActiveHand: table.ActiveHand}
 	}
 }
 
-func (room *Room) broadcastMessages() {
+func (room *room) broadcastMessages() {
 	for {
 		message := <-room.broadcast
 		for client := range room.clients {

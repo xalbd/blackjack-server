@@ -1,7 +1,6 @@
 package game
 
 import (
-	"fmt"
 	"slices"
 
 	"github.com/google/uuid"
@@ -12,13 +11,13 @@ type TableStatus int
 const (
 	Betting TableStatus = iota
 	PlayerTurn
-	DealerTurn
 )
 
 type Player struct {
-	Id          uuid.UUID
-	Money       int
-	DoneBetting bool
+	Id          uuid.UUID `json:"id"`
+	Money       int       `json:"money"`
+	DoneBetting bool      `json:"doneBetting"`
+	active      bool
 }
 
 type Table struct {
@@ -36,8 +35,20 @@ func NewTable() Table {
 	deck.shuffle()
 
 	return Table{
-		deck:   deck,
-		minBet: 10,
+		deck:       deck,
+		minBet:     10,
+		ActiveHand: -1,
+	}
+}
+
+func (t *Table) ResetHands() {
+	t.ActiveHand = -1
+	t.status = Betting
+	t.dealer = Hand{}
+	t.Hands = []Hand{}
+
+	for i := range t.Players {
+		t.Players[i].DoneBetting = false
 	}
 }
 
@@ -65,11 +76,6 @@ func (t *Table) enterBet(uuid uuid.UUID, bet int) {
 	t.Hands = append(t.Hands, Hand{Bet: bet, PlayerId: player.Id})
 }
 
-func (t *Table) ResetHands() {
-	t.dealer = Hand{}
-	t.Hands = []Hand{}
-}
-
 func (t *Table) dealAll() {
 	for range 2 {
 		for i := range t.Hands {
@@ -81,12 +87,34 @@ func (t *Table) dealAll() {
 
 func (t *Table) allBetsIn() bool {
 	for _, p := range t.Players {
-		if !p.DoneBetting {
+		if !p.DoneBetting && p.active && p.Money > t.minBet {
 			return false
 		}
 	}
 
 	return true
+}
+
+func (table *Table) dealerTurn() {
+	for !table.dealer.hasBust() && table.dealer.bestScore() < 17 {
+		table.deck.dealTo(&table.dealer)
+	}
+
+	d := table.dealer.bestScore()
+	for i := range table.Hands {
+		p := table.playerWithUUID(table.Hands[i].PlayerId)
+		h := &table.Hands[i]
+
+		if h.bestScore() > d {
+			p.Money += 2 * h.Bet
+		} else if h.bestScore() == d {
+			p.Money += h.Bet
+		}
+
+		h.Bet = 0
+	}
+
+	table.ResetHands()
 }
 
 // deals a card to the current hand
@@ -107,7 +135,7 @@ func (t *Table) canSplit() bool {
 	return t.canDouble() && len(hand.Cards) == 2 && hand.Cards[0].value() == hand.Cards[1].value()
 }
 
-// attempts to double a hand, returns whether double was successful
+// attempts to double current hand, returns whether double was successful
 func (t *Table) double() bool {
 	hand := t.currentHand()
 	player := t.playerWithUUID(hand.PlayerId)
@@ -144,11 +172,13 @@ func (t *Table) bust() bool {
 	return false
 }
 
-// checks if a hand has blackjack and pays out/sets hand inactive if it does
+// checks if current hand has blackjack and pays out if it does
 // returns whether blackjack was detected
-func blackjack(hand *Hand, player *Player) bool {
+func (t *Table) blackjack() bool {
+	hand := t.currentHand()
+	player := t.playerWithUUID(hand.PlayerId)
+
 	if hand.hasBlackjack() {
-		fmt.Println("Player has blackjack!")
 		player.Money += (5 * hand.Bet) / 2
 		hand.Bet = 0
 		return true

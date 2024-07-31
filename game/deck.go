@@ -37,8 +37,8 @@ const (
 )
 
 type Card struct {
-	Suit
-	Rank
+	Suit `json:"suit"`
+	Rank `json:"rank"`
 }
 
 type Deck struct {
@@ -47,9 +47,9 @@ type Deck struct {
 }
 
 type Hand struct {
-	Cards    []Card
-	Bet      int
-	PlayerId uuid.UUID
+	Cards    []Card    `json:"cards"`
+	Bet      int       `json:"bet"`
+	PlayerId uuid.UUID `json:"playerId"`
 }
 
 func makeDeck(decks int) Deck {
@@ -154,7 +154,7 @@ func (h *Hand) bestScore() int {
 }
 
 func (h *Hand) hasBlackjack() bool {
-	return len(h.Cards) == 2 && slices.Contains(h.scores(), 21)
+	return len(h.Cards) == 2 && h.bestScore() == 21
 }
 
 func (h *Hand) hasBust() bool {

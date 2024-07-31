@@ -19,23 +19,30 @@ type command struct {
 	playerId uuid.UUID
 }
 
+type playerUpdate struct {
+	playerId uuid.UUID
+	connect  bool
+}
+
 type broadcast struct {
-	Id         uuid.UUID
-	ActiveHand int
-	Players    []game.Player
-	Hands      []game.Hand
+	PlayerId   uuid.UUID     `json:"playerId"`
+	ActiveHand int           `json:"activeHand"`
+	Players    []game.Player `json:"players"`
+	Hands      []game.Hand   `json:"hands"`
 }
 
 type room struct {
-	clients   map[*websocket.Conn]uuid.UUID
-	commands  chan command
-	broadcast chan broadcast
+	clients       map[*websocket.Conn]uuid.UUID
+	commands      chan command
+	playerUpdates chan playerUpdate
+	broadcast     chan broadcast
 }
 
 func StartServer() {
 	server := room{
 		make(map[*websocket.Conn]uuid.UUID),
 		make(chan command),
+		make(chan playerUpdate),
 		make(chan broadcast),
 	}
 
@@ -52,12 +59,10 @@ func (room *room) handleConnections(w http.ResponseWriter, r *http.Request) {
 		log.Print("upgrade:", err)
 		return
 	}
-	defer func() {
-		c.Close()
-		delete(room.clients, c)
-	}()
+	defer room.closeConnection(c)
 
 	room.clients[c] = uuid.New()
+	room.playerUpdates <- playerUpdate{room.clients[c], true}
 
 	for {
 		_, message, err := c.ReadMessage()
@@ -71,13 +76,24 @@ func (room *room) handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (room *room) closeConnection(c *websocket.Conn) {
+	c.Close()
+	room.playerUpdates <- playerUpdate{room.clients[c], false}
+	delete(room.clients, c)
+}
+
 func (room *room) startTable() {
 	table := game.NewTable()
 	table.ResetHands()
 
 	for {
-		command := <-room.commands
-		table.HandleCommand(command.playerId, command.message)
+		select {
+		case command := <-room.commands:
+			table.HandleCommand(command.playerId, command.message)
+		case playerUpdate := <-room.playerUpdates:
+			table.HandlePlayerUpdate(playerUpdate.playerId, playerUpdate.connect)
+		}
+
 		room.broadcast <- broadcast{Players: table.Players, Hands: table.Hands, ActiveHand: table.ActiveHand}
 	}
 }
@@ -85,14 +101,12 @@ func (room *room) startTable() {
 func (room *room) broadcastMessages() {
 	for {
 		message := <-room.broadcast
-		for client := range room.clients {
-			message.Id = room.clients[client]
+		for c := range room.clients {
+			message.PlayerId = room.clients[c]
 			out, _ := json.Marshal(message)
-			err := client.WriteMessage(websocket.TextMessage, []byte(out))
+			err := c.WriteMessage(websocket.TextMessage, []byte(out))
 			if err != nil {
 				log.Printf("error: %v", err)
-				client.Close()
-				delete(room.clients, client)
 			}
 		}
 	}

@@ -4,8 +4,6 @@ import (
 	"math/rand"
 	"slices"
 	"strconv"
-
-	"github.com/google/uuid"
 )
 
 type Suit uint8
@@ -47,9 +45,9 @@ type Deck struct {
 }
 
 type Hand struct {
-	Cards    []Card    `json:"cards"`
-	Bet      int       `json:"bet"`
-	PlayerId uuid.UUID `json:"playerId"`
+	Cards     []Card `json:"cards"`
+	Bet       int64  `json:"bet"`
+	PlayerUID string `json:"playerId"`
 }
 
 func makeDeck(decks int) Deck {

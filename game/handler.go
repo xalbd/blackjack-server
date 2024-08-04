@@ -2,33 +2,38 @@ package game
 
 import (
 	"encoding/json"
-
-	"github.com/google/uuid"
 )
 
 type clientCommand struct {
 	Action string
-	Bet    int
+	Bet    int64
 	Hand   int
 }
 
-func (table *Table) HandlePlayerUpdate(uuid uuid.UUID, connect bool) {
+type MoneyUpdate struct {
+	UID   string
+	Money int64
+}
+
+func (table *Table) HandlePlayerUpdate(uid string, money int64, connect bool) {
 	switch connect {
 	case true:
-		if table.playerWithUUID(uuid) == nil {
-			table.Players = append(table.Players, Player{Id: uuid, Money: 1000, active: true})
+		if table.playerWithUID(uid) == nil {
+			table.Players = append(table.Players, Player{UID: uid, Money: money, active: true})
+		} else {
+			table.playerWithUID(uid).active = true
 		}
 	case false:
-		table.playerWithUUID(uuid).active = false
+		table.playerWithUID(uid).active = false
 
 		// advance play if current player leaves
-		if table.status == PlayerTurn && table.currentHand().PlayerId == uuid {
+		if table.status == PlayerTurn && table.currentHand().PlayerUID == uid {
 			table.advanceHand()
 		}
 	}
 }
 
-func (table *Table) HandleCommand(uuid uuid.UUID, recv []byte) {
+func (table *Table) HandleCommand(uid string, recv []byte) {
 	var cmd clientCommand
 	err := json.Unmarshal(recv, &cmd)
 	if err != nil {
@@ -37,21 +42,21 @@ func (table *Table) HandleCommand(uuid uuid.UUID, recv []byte) {
 
 	switch table.status {
 	case Betting:
-		table.handleBettingCommand(uuid, cmd)
+		table.handleBettingCommand(uid, cmd)
 	case PlayerTurn:
-		table.handlePlayerCommand(uuid, cmd)
+		table.handlePlayerCommand(uid, cmd)
 	}
 }
 
-func (table *Table) handleBettingCommand(uuid uuid.UUID, cmd clientCommand) {
+func (table *Table) handleBettingCommand(uid string, cmd clientCommand) {
 	switch cmd.Action {
 	case "bet":
-		table.enterBet(uuid, cmd.Bet)
+		table.enterBet(uid, cmd.Bet)
 	case "end":
 		if len(table.Hands) == 0 {
 			break
 		}
-		table.playerWithUUID(uuid).DoneBetting = true
+		table.playerWithUID(uid).DoneBetting = true
 		if table.allBetsIn() {
 			table.dealAll()
 			if table.dealer.hasBlackjack() {
@@ -64,9 +69,9 @@ func (table *Table) handleBettingCommand(uuid uuid.UUID, cmd clientCommand) {
 	}
 }
 
-func (table *Table) handlePlayerCommand(uuid uuid.UUID, cmd clientCommand) {
-	player := table.playerWithUUID(uuid)
-	if player == nil || table.Hands[table.ActiveHand].PlayerId != uuid {
+func (table *Table) handlePlayerCommand(uid string, cmd clientCommand) {
+	player := table.playerWithUID(uid)
+	if player == nil || table.Hands[table.ActiveHand].PlayerUID != uid {
 		return
 	}
 
@@ -94,7 +99,7 @@ func (table *Table) advanceHand() {
 		table.dealerTurn()
 	} else {
 		// check for bust/blackjack and then skip for inactive players
-		if table.bust() || table.blackjack() || !table.playerWithUUID(table.Hands[table.ActiveHand].PlayerId).active {
+		if table.bust() || table.blackjack() || !table.playerWithUID(table.Hands[table.ActiveHand].PlayerUID).active {
 			table.advanceHand()
 		}
 	}

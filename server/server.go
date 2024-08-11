@@ -14,6 +14,7 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
+	// TODO: add origin check
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
@@ -28,19 +29,12 @@ type playerUpdate struct {
 	connect  bool
 }
 
-type broadcast struct {
-	PlayerId   string        `json:"playerId"`
-	ActiveHand int           `json:"activeHand"`
-	Players    []game.Player `json:"players"`
-	Hands      []game.Hand   `json:"hands"`
-}
-
 type room struct {
 	clients       map[*websocket.Conn]string
 	commands      chan command
 	playerUpdates chan playerUpdate
 	moneyUpdates  chan game.MoneyUpdate
-	broadcast     chan broadcast
+	broadcast     chan game.Broadcast
 	firebase      *firebase.App
 	firestore     *firestore.Client
 	ctx           context.Context
@@ -64,7 +58,7 @@ func StartServer() {
 		make(chan command),
 		make(chan playerUpdate),
 		make(chan game.MoneyUpdate),
-		make(chan broadcast),
+		make(chan game.Broadcast),
 		app,
 		firestore,
 		ctx,
@@ -138,12 +132,22 @@ func (room *room) handleConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (room *room) removePlayer(c *websocket.Conn) {
-	room.playerUpdates <- playerUpdate{room.clients[c], 0, false}
+	allGone := true
+	for k, v := range room.clients {
+		if k != c && v == room.clients[c] {
+			allGone = false
+			break
+		}
+	}
+
+	if allGone {
+		room.playerUpdates <- playerUpdate{room.clients[c], 0, false}
+	}
 	delete(room.clients, c)
 }
 
 func (room *room) startTable() {
-	table := game.NewTable(room.moneyUpdates)
+	table := game.NewTable(room.moneyUpdates, room.broadcast)
 	table.ResetHands()
 
 	for {
@@ -153,8 +157,6 @@ func (room *room) startTable() {
 		case playerUpdate := <-room.playerUpdates:
 			table.HandlePlayerUpdate(playerUpdate.playerId, playerUpdate.money, playerUpdate.connect)
 		}
-
-		room.broadcast <- broadcast{Players: table.Players, Hands: table.Hands, ActiveHand: table.ActiveHand}
 	}
 }
 

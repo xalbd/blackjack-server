@@ -48,6 +48,7 @@ type Hand struct {
 	Cards     []Card `json:"cards"`
 	Bet       int64  `json:"bet"`
 	PlayerUID string `json:"playerId"`
+	Split     bool   `json:"split"`
 }
 
 func makeDeck(decks int) Deck {

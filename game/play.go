@@ -256,7 +256,7 @@ func (table *Table) advanceHand() {
 	table.ActiveHand++
 
 	// skip past empty slots
-	for table.ActiveHand < table.seats && (table.Hands[table.ActiveHand].PlayerUID == "" || table.Hands[table.ActiveHand].Bet == 0) {
+	for table.ActiveHand < len(table.Hands) && (table.Hands[table.ActiveHand].PlayerUID == "" || table.Hands[table.ActiveHand].Bet == 0) {
 		table.ActiveHand++
 	}
 

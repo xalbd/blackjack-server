@@ -16,11 +16,11 @@ type MoneyUpdate struct {
 }
 
 type Broadcast struct {
-	PlayerId   string   `json:"playerId"`
-	ActiveHand int      `json:"activeHand"`
-	Players    []Player `json:"players"`
-	Hands      []Hand   `json:"hands"`
-	Dealer     []Card   `json:"dealer"`
+	Dealer      []Card      `json:"dealer"`
+	Players     []Player    `json:"players"`
+	Hands       []Hand      `json:"hands"`
+	ActiveHand  int         `json:"activeHand"`
+	TableStatus TableStatus `json:"status"`
 }
 
 func (table *Table) HandlePlayerUpdate(uid string, money int64, connect bool) {
@@ -80,11 +80,11 @@ func (table *Table) handleBettingCommand(uid string, cmd clientCommand) {
 	}
 
 	if table.allBetsIn() {
+		table.status = PlayerTurn
 		table.dealAll()
 		if table.dealer.hasBlackjack() {
 			table.dealerTurn()
 		} else {
-			table.status = PlayerTurn
 			table.advanceHand()
 		}
 	}

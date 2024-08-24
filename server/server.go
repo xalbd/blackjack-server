@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -34,7 +33,7 @@ type room struct {
 	commands      chan command
 	playerUpdates chan playerUpdate
 	moneyUpdates  chan game.MoneyUpdate
-	broadcast     chan game.Broadcast
+	broadcast     chan []byte
 	firebase      *firebase.App
 	firestore     *firestore.Client
 	ctx           context.Context
@@ -58,7 +57,7 @@ func StartServer() {
 		make(chan command),
 		make(chan playerUpdate),
 		make(chan game.MoneyUpdate),
-		make(chan game.Broadcast),
+		make(chan []byte),
 		app,
 		firestore,
 		ctx,
@@ -164,9 +163,7 @@ func (room *room) broadcastMessages() {
 	for {
 		message := <-room.broadcast
 		for c := range room.clients {
-			message.PlayerId = room.clients[c]
-			out, _ := json.Marshal(message)
-			err := c.WriteMessage(websocket.TextMessage, []byte(out))
+			err := c.WriteMessage(websocket.TextMessage, message)
 			if err != nil {
 				log.Println("error sending to websocket:", err)
 			}

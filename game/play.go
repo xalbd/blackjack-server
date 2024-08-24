@@ -1,6 +1,7 @@
 package game
 
 import (
+	"encoding/json"
 	"slices"
 )
 
@@ -28,10 +29,10 @@ type Table struct {
 	Hands        []Hand
 	ActiveHand   int
 	MoneyUpdates chan MoneyUpdate
-	Broadcast    chan Broadcast
+	Broadcast    chan []byte
 }
 
-func NewTable(moneyUpdates chan MoneyUpdate, broadcast chan Broadcast) Table {
+func NewTable(moneyUpdates chan MoneyUpdate, broadcast chan []byte) Table {
 	deck := makeDeck(1)
 	deck.shuffle()
 
@@ -54,6 +55,7 @@ func (t *Table) ResetHands() {
 	t.status = Betting
 	t.dealer = Hand{}
 
+	// reset hands and remove split hands
 	h := 0
 	for _, x := range t.Hands {
 		if !x.Split {
@@ -62,10 +64,10 @@ func (t *Table) ResetHands() {
 			t.Hands[h] = x
 			h++
 		}
-
 	}
 	t.Hands = t.Hands[:h]
 
+	// remove players who have left
 	p := 0
 	for _, x := range t.Players {
 		if x.active {
@@ -81,13 +83,15 @@ func (t *Table) ResetHands() {
 // call this method to broadcast table status to all players
 func (t *Table) broadcast() {
 	var d []Card
+
+	// only show dealer's first card during player turn
 	if t.status == PlayerTurn {
 		d = t.dealer.Cards[:1]
 	} else {
 		d = t.dealer.Cards
 	}
-
-	t.Broadcast <- Broadcast{Players: t.Players, Hands: t.Hands, ActiveHand: t.ActiveHand, Dealer: d}
+	out, _ := json.Marshal(Broadcast{Dealer: d, Players: t.Players, Hands: t.Hands, ActiveHand: t.ActiveHand, TableStatus: t.status})
+	t.Broadcast <- out
 }
 
 // updates a player's money and sends message to mirror in Firebase
@@ -147,12 +151,11 @@ func (t *Table) dealAll() {
 		for i := range t.Hands {
 			if t.Hands[i].PlayerUID != "" {
 				t.deck.dealTo(&t.Hands[i])
-				t.broadcast()
 			}
 		}
 		t.deck.dealTo(&t.dealer)
-		t.broadcast()
 	}
+	t.broadcast()
 }
 
 func (t *Table) allBetsIn() bool {
@@ -251,12 +254,13 @@ func (t *Table) split() bool {
 // advances active hand as far as possible
 func (table *Table) advanceHand() {
 	table.ActiveHand++
-	table.broadcast()
 
 	// skip past empty slots
 	for table.ActiveHand < table.seats && (table.Hands[table.ActiveHand].PlayerUID == "" || table.Hands[table.ActiveHand].Bet == 0) {
 		table.ActiveHand++
 	}
+
+	table.broadcast()
 
 	if table.ActiveHand >= len(table.Hands) {
 		table.dealerTurn()

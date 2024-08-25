@@ -185,13 +185,12 @@ func (t *Table) dealerTurn() {
 	}
 
 	d := t.dealer.bestScore()
-	for i := range t.Hands {
-		if t.Hands[i].PlayerUID == "" {
+	for i, h := range t.Hands {
+		if h.PlayerUID == "" {
 			continue
 		}
 
-		p := t.playerWithUID(t.Hands[i].PlayerUID)
-		h := &t.Hands[i]
+		p := t.playerWithUID(h.PlayerUID)
 
 		if h.bestScore() > d {
 			t.updateMoney(p.UID, p.Money+2*h.Bet)
@@ -199,7 +198,7 @@ func (t *Table) dealerTurn() {
 			t.updateMoney(p.UID, p.Money+h.Bet)
 		}
 
-		h.Bet = 0
+		t.Hands[i].Bet = 0
 		t.broadcast()
 	}
 

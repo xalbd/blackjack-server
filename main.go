@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/xalbd/blackjack-server/server"
+	"github.com/xalbd/blackjack-server/game"
 )
 
 func main() {
-	server.StartServer()
+	game.StartServer()
 }

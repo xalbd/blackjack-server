@@ -1,4 +1,4 @@
-package server
+package game
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
 	"github.com/gorilla/websocket"
-	"github.com/xalbd/blackjack-server/game"
 )
 
 var upgrader = websocket.Upgrader{
@@ -32,7 +31,7 @@ type room struct {
 	clients       map[*websocket.Conn]string
 	commands      chan command
 	playerUpdates chan playerUpdate
-	moneyUpdates  chan game.MoneyUpdate
+	moneyUpdates  chan MoneyUpdate
 	broadcast     chan []byte
 	firebase      *firebase.App
 	firestore     *firestore.Client
@@ -56,7 +55,7 @@ func StartServer() {
 		make(map[*websocket.Conn]string),
 		make(chan command),
 		make(chan playerUpdate),
-		make(chan game.MoneyUpdate),
+		make(chan MoneyUpdate),
 		make(chan []byte),
 		app,
 		firestore,
@@ -146,7 +145,7 @@ func (room *room) removePlayer(c *websocket.Conn) {
 }
 
 func (room *room) startTable() {
-	table := game.NewTable(room.moneyUpdates, room.broadcast)
+	table := NewTable(room.moneyUpdates, room.broadcast)
 	table.ResetHands()
 
 	for {

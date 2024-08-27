@@ -6,19 +6,19 @@ import (
 	"strconv"
 )
 
-type Suit uint8
+type suit uint8
 
 const (
-	Spade Suit = iota
+	Spade suit = iota
 	Heart
 	Diamond
 	Club
 )
 
-type Rank uint8
+type rank uint8
 
 const (
-	_ Rank = iota
+	_ rank = iota
 	Ace
 	Two
 	Three
@@ -34,29 +34,29 @@ const (
 	King
 )
 
-type Card struct {
-	Suit `json:"suit"`
-	Rank `json:"rank"`
+type card struct {
+	Suit suit `json:"suit"`
+	Rank rank `json:"rank"`
 }
 
 type Deck struct {
-	cards []Card
+	cards []card
 	index int
 }
 
 type Hand struct {
-	Cards     []Card `json:"cards"`
+	Cards     []card `json:"cards"`
 	Bet       int64  `json:"bet"`
 	PlayerUID string `json:"playerId"`
 	Split     bool   `json:"split"`
 }
 
 func makeDeck(decks int) Deck {
-	var cards []Card
+	var cards []card
 	for range decks {
 		for s := Spade; s <= Club; s++ {
 			for r := Ace; r <= King; r++ {
-				cards = append(cards, Card{Suit: s, Rank: r})
+				cards = append(cards, card{Suit: s, Rank: r})
 			}
 		}
 	}
@@ -71,7 +71,7 @@ func (d *Deck) shuffle() {
 	})
 }
 
-func (d *Deck) deal() Card {
+func (d *Deck) deal() card {
 	if d.index >= len(d.cards) {
 		d.shuffle()
 		d.index = 0
@@ -86,7 +86,7 @@ func (d *Deck) dealTo(h *Hand) {
 	h.Cards = append(h.Cards, d.deal())
 }
 
-func (c Card) value() int {
+func (c card) value() int {
 	switch c.Rank {
 	case Jack, Queen, King:
 		return 10
@@ -95,7 +95,7 @@ func (c Card) value() int {
 	}
 }
 
-func (c Card) String() string {
+func (c card) String() string {
 	switch c.Rank {
 	case Ace:
 		return "A"

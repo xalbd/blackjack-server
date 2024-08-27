@@ -2,6 +2,7 @@ package game
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -16,26 +17,15 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-type command struct {
-	message  []byte
-	playerId string
+type server struct {
+	rooms     map[string]room
+	app       *firebase.App
+	firestore *firestore.Client
+	ctx       context.Context
 }
 
-type playerUpdate struct {
-	playerId string
-	money    int64
-	connect  bool
-}
-
-type room struct {
-	clients       map[*websocket.Conn]string
-	commands      chan command
-	playerUpdates chan playerUpdate
-	moneyUpdates  chan MoneyUpdate
-	broadcast     chan []byte
-	firebase      *firebase.App
-	firestore     *firestore.Client
-	ctx           context.Context
+type info struct {
+	Rooms []string `json:"rooms"`
 }
 
 func StartServer() {
@@ -51,26 +41,103 @@ func StartServer() {
 	}
 	defer firestore.Close()
 
-	server := room{
+	server := server{rooms: make(map[string]room), app: app, firestore: firestore, ctx: ctx}
+
+	i := room{
 		make(map[*websocket.Conn]string),
-		make(chan command),
-		make(chan playerUpdate),
-		make(chan MoneyUpdate),
+		make(chan wsCommand),
+		make(chan playersUpdate),
+		make(chan moneyUpdate),
 		make(chan []byte),
 		app,
 		firestore,
 		ctx,
 	}
 
-	go server.startTable()
-	go server.broadcastMessages()
-	go server.updateMoney()
+	j := room{
+		make(map[*websocket.Conn]string),
+		make(chan wsCommand),
+		make(chan playersUpdate),
+		make(chan moneyUpdate),
+		make(chan []byte),
+		app,
+		firestore,
+		ctx,
+	}
 
-	http.HandleFunc("/", server.handleConnections)
+	server.addRoom("roomy", i)
+	server.addRoom("another", j)
+
+	http.HandleFunc("/room/{room}/ws", server.handleWebsocketConnections)
+	http.HandleFunc("/room/{room}", server.handleRoomRequest)
+	http.HandleFunc("/info", server.handleInfoRequest)
 	http.ListenAndServe(":8080", nil)
 }
 
-func (room *room) handleConnections(w http.ResponseWriter, r *http.Request) {
+func (server *server) addRoom(roomCode string, r room) {
+	server.rooms[roomCode] = r
+	go r.startTable()
+	go r.broadcastMessages()
+	go r.updateMoney()
+}
+
+func (server *server) handleInfoRequest(w http.ResponseWriter, r *http.Request) {
+	info := info{make([]string, len(server.rooms))}
+
+	i := 0
+	for k := range server.rooms {
+		info.Rooms[i] = k
+		i++
+	}
+
+	out, err := json.Marshal(info)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// also fix this CORS issue
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(http.StatusOK)
+	w.Write(out)
+}
+
+func (server *server) handleRoomRequest(w http.ResponseWriter, r *http.Request) {
+	roomCode := r.PathValue("room")
+
+	switch r.Method {
+	case http.MethodGet:
+		// status 404 if room doesn't exist; status 200 if it does to let client know they can establish websocket connection
+		_, ok := server.rooms[roomCode]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+
+	case http.MethodPost:
+		// temporary room creation
+		server.addRoom(roomCode, room{
+			make(map[*websocket.Conn]string),
+			make(chan wsCommand),
+			make(chan playersUpdate),
+			make(chan moneyUpdate),
+			make(chan []byte),
+			server.app,
+			server.firestore,
+			server.ctx,
+		})
+	}
+}
+
+func (server *server) handleWebsocketConnections(w http.ResponseWriter, r *http.Request) {
+	// grab requested room from path
+	roomCode := r.PathValue("room")
+	room, ok := server.rooms[roomCode]
+	if !ok {
+		return
+	}
+
 	// upgrade any connections to a websocket
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -113,7 +180,7 @@ func (room *room) handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	// track authorized user and notify other players
 	room.clients[c] = token.UID
-	room.playerUpdates <- playerUpdate{room.clients[c], player.Data()["money"].(int64), true}
+	room.playersUpdates <- playersUpdate{room.clients[c], player.Data()["money"].(int64), true}
 	defer room.removePlayer(c)
 
 	for {
@@ -125,57 +192,6 @@ func (room *room) handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Printf("recv: %s", message)
 
-		room.commands <- command{message, room.clients[c]}
-	}
-}
-
-func (room *room) removePlayer(c *websocket.Conn) {
-	allGone := true
-	for k, v := range room.clients {
-		if k != c && v == room.clients[c] {
-			allGone = false
-			break
-		}
-	}
-
-	if allGone {
-		room.playerUpdates <- playerUpdate{room.clients[c], 0, false}
-	}
-	delete(room.clients, c)
-}
-
-func (room *room) startTable() {
-	table := NewTable(room.moneyUpdates, room.broadcast)
-	table.ResetHands()
-
-	for {
-		select {
-		case command := <-room.commands:
-			table.HandleCommand(command.playerId, command.message)
-		case playerUpdate := <-room.playerUpdates:
-			table.HandlePlayerUpdate(playerUpdate.playerId, playerUpdate.money, playerUpdate.connect)
-		}
-	}
-}
-
-func (room *room) broadcastMessages() {
-	for {
-		message := <-room.broadcast
-		for c := range room.clients {
-			err := c.WriteMessage(websocket.TextMessage, message)
-			if err != nil {
-				log.Println("error sending to websocket:", err)
-			}
-		}
-	}
-}
-
-func (room *room) updateMoney() {
-	for {
-		moneyUpdate := <-room.moneyUpdates
-		room.firestore.Collection("users").Doc(moneyUpdate.UID).Set(room.ctx,
-			map[string]interface{}{
-				"money": moneyUpdate.Money,
-			})
+		room.wsCommands <- wsCommand{message, room.clients[c]}
 	}
 }

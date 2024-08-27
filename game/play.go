@@ -5,44 +5,44 @@ import (
 	"slices"
 )
 
-type TableStatus int
+type tableStatus int
 
 const (
-	Betting TableStatus = iota
+	Betting tableStatus = iota
 	PlayerTurn
 	DealerTurn
 )
 
-type Player struct {
+type player struct {
 	UID    string `json:"id"`
 	Money  int64  `json:"money"`
 	active bool
 }
 
-type Table struct {
+type table struct {
 	deck         Deck
 	dealer       Hand
 	minBet       int64
 	seats        int
-	status       TableStatus
-	Players      []Player
+	status       tableStatus
+	Players      []player
 	Hands        []Hand
 	ActiveHand   int
-	MoneyUpdates chan MoneyUpdate
+	MoneyUpdates chan moneyUpdate
 	Broadcast    chan []byte
 }
 
-func NewTable(moneyUpdates chan MoneyUpdate, broadcast chan []byte) Table {
+func newTable(moneyUpdates chan moneyUpdate, broadcast chan []byte) table {
 	deck := makeDeck(1)
 	deck.shuffle()
 
-	return Table{
+	return table{
 		deck:         deck,
 		dealer:       Hand{},
 		minBet:       10,
 		seats:        6,
 		status:       Betting,
-		Players:      []Player{},
+		Players:      []player{},
 		Hands:        make([]Hand, 6),
 		ActiveHand:   -1,
 		MoneyUpdates: moneyUpdates,
@@ -50,7 +50,7 @@ func NewTable(moneyUpdates chan MoneyUpdate, broadcast chan []byte) Table {
 	}
 }
 
-func (t *Table) ResetHands() {
+func (t *table) resetHands() {
 	t.ActiveHand = -1
 	t.status = Betting
 	t.dealer = Hand{}
@@ -81,8 +81,8 @@ func (t *Table) ResetHands() {
 }
 
 // call this method to broadcast table status to all players
-func (t *Table) broadcast() {
-	var d []Card
+func (t *table) broadcast() {
+	var d []card
 
 	// only show dealer's first card during player turn
 	if t.status == PlayerTurn {
@@ -90,17 +90,17 @@ func (t *Table) broadcast() {
 	} else {
 		d = t.dealer.Cards
 	}
-	out, _ := json.Marshal(Broadcast{Dealer: d, Players: t.Players, Hands: t.Hands, ActiveHand: t.ActiveHand, TableStatus: t.status})
+	out, _ := json.Marshal(broadcast{Dealer: d, Players: t.Players, Hands: t.Hands, ActiveHand: t.ActiveHand, TableStatus: t.status})
 	t.Broadcast <- out
 }
 
 // updates a player's money and sends message to mirror in Firebase
-func (t *Table) updateMoney(uid string, money int64) {
+func (t *table) updateMoney(uid string, money int64) {
 	t.playerWithUID(uid).Money = money
-	t.MoneyUpdates <- MoneyUpdate{uid, money}
+	t.MoneyUpdates <- moneyUpdate{uid, money}
 }
 
-func (t *Table) playerWithUID(uid string) *Player {
+func (t *table) playerWithUID(uid string) *player {
 	for i := range t.Players {
 		if t.Players[i].UID == uid {
 			return &t.Players[i]
@@ -109,11 +109,11 @@ func (t *Table) playerWithUID(uid string) *Player {
 	return nil
 }
 
-func (t *Table) currentHand() *Hand {
+func (t *table) currentHand() *Hand {
 	return &t.Hands[t.ActiveHand]
 }
 
-func (t *Table) join(uid string, seat int) {
+func (t *table) join(uid string, seat int) {
 	player := t.playerWithUID(uid)
 
 	if seat < 0 || seat >= t.seats || t.Hands[seat].PlayerUID != "" || player.Money < t.minBet {
@@ -124,7 +124,7 @@ func (t *Table) join(uid string, seat int) {
 	t.broadcast()
 }
 
-func (t *Table) leave(uid string, seat int) {
+func (t *table) leave(uid string, seat int) {
 	if seat < 0 || seat >= t.seats || t.Hands[seat].PlayerUID != uid || t.Hands[seat].Bet > 0 {
 		return
 	}
@@ -133,7 +133,7 @@ func (t *Table) leave(uid string, seat int) {
 	t.broadcast()
 }
 
-func (t *Table) enterBet(uid string, bet int64, seat int) {
+func (t *table) enterBet(uid string, bet int64, seat int) {
 	player := t.playerWithUID(uid)
 
 	if player == nil || bet < t.minBet || bet > player.Money || seat < 0 || seat >= t.seats || t.Hands[seat].PlayerUID != uid || t.Hands[seat].Bet > 0 {
@@ -146,7 +146,7 @@ func (t *Table) enterBet(uid string, bet int64, seat int) {
 	t.broadcast()
 }
 
-func (t *Table) dealAll() {
+func (t *table) dealAll() {
 	for range 2 {
 		for i := range t.Hands {
 			if t.Hands[i].PlayerUID != "" {
@@ -158,7 +158,7 @@ func (t *Table) dealAll() {
 	t.broadcast()
 }
 
-func (t *Table) allBetsIn() bool {
+func (t *table) allBetsIn() bool {
 	bets := 0
 
 	for i := range t.Hands {
@@ -176,7 +176,7 @@ func (t *Table) allBetsIn() bool {
 	return bets > 0
 }
 
-func (t *Table) dealerTurn() {
+func (t *table) dealerTurn() {
 	t.status = DealerTurn
 	t.broadcast()
 	for !t.dealer.hasBust() && t.dealer.bestScore() < 17 {
@@ -202,29 +202,29 @@ func (t *Table) dealerTurn() {
 		t.broadcast()
 	}
 
-	t.ResetHands()
+	t.resetHands()
 }
 
 // deals a card to the current hand
-func (t *Table) hit() {
+func (t *table) hit() {
 	t.deck.dealTo(t.currentHand())
 }
 
 // returns whether current hand can be doubled
-func (t *Table) canDouble() bool {
+func (t *table) canDouble() bool {
 	hand := t.currentHand()
 	player := t.playerWithUID(hand.PlayerUID)
 	return player.Money >= hand.Bet
 }
 
 // returns whether current hand can be split
-func (t *Table) canSplit() bool {
+func (t *table) canSplit() bool {
 	hand := t.currentHand()
 	return t.canDouble() && len(hand.Cards) == 2 && hand.Cards[0].value() == hand.Cards[1].value()
 }
 
 // attempts to double current hand, returns whether double was successful
-func (t *Table) double() bool {
+func (t *table) double() bool {
 	hand := t.currentHand()
 	player := t.playerWithUID(hand.PlayerUID)
 
@@ -238,11 +238,11 @@ func (t *Table) double() bool {
 }
 
 // attempts to split current hand, returns whether split was successful
-func (t *Table) split() bool {
+func (t *table) split() bool {
 	oldHand := t.currentHand()
 
 	if t.canSplit() {
-		newHand := Hand{Cards: []Card{oldHand.Cards[1]}, Bet: oldHand.Bet, PlayerUID: oldHand.PlayerUID, Split: true}
+		newHand := Hand{Cards: []card{oldHand.Cards[1]}, Bet: oldHand.Bet, PlayerUID: oldHand.PlayerUID, Split: true}
 		oldHand.Cards = oldHand.Cards[:1]
 		t.Hands = slices.Insert(t.Hands, t.ActiveHand+1, newHand)
 		return true
@@ -251,7 +251,7 @@ func (t *Table) split() bool {
 }
 
 // advances active hand as far as possible
-func (table *Table) advanceHand() {
+func (table *table) advanceHand() {
 	table.ActiveHand++
 
 	// skip past empty slots
@@ -273,7 +273,7 @@ func (table *Table) advanceHand() {
 
 // checks if current hand has bust and takes money if it has
 // returns whether bust was detected
-func (t *Table) bust() bool {
+func (t *table) bust() bool {
 	if t.currentHand().hasBust() {
 		t.currentHand().Bet = 0
 		return true
@@ -283,7 +283,7 @@ func (t *Table) bust() bool {
 
 // checks if current hand has blackjack and pays out if it does
 // returns whether blackjack was detected
-func (t *Table) blackjack() bool {
+func (t *table) blackjack() bool {
 	hand := t.currentHand()
 	player := t.playerWithUID(hand.PlayerUID)
 

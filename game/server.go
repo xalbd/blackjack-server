@@ -12,7 +12,6 @@ import (
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
 	"github.com/gorilla/websocket"
-	"github.com/joho/godotenv"
 )
 
 var upgrader = websocket.Upgrader{
@@ -67,11 +66,6 @@ func StartServer() {
 }
 
 func checkCORS(next http.Handler) http.Handler {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("error loading .env file")
-	}
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin == os.Getenv("FRONTEND") {

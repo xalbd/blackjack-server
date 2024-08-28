@@ -10,6 +10,7 @@ import (
 )
 
 type room struct {
+	table          table
 	clients        map[*websocket.Conn]string
 	wsCommands     chan wsCommand
 	playersUpdates chan playersUpdate
@@ -52,15 +53,14 @@ func (room *room) removePlayer(c *websocket.Conn) {
 }
 
 func (room *room) startTable() {
-	table := newTable(room.moneyUpdates, room.broadcast)
-	table.resetHands()
+	room.table.resetHands()
 
 	for {
 		select {
 		case command := <-room.wsCommands:
-			table.handleCommand(command)
+			room.table.handleCommand(command)
 		case playerUpdate := <-room.playersUpdates:
-			table.handlePlayerUpdate(playerUpdate)
+			room.table.handlePlayerUpdate(playerUpdate)
 		}
 	}
 }

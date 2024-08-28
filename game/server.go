@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math/rand"
 	"net/http"
+	"os"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
 	"github.com/gorilla/websocket"
+	"github.com/joho/godotenv"
 )
 
 var upgrader = websocket.Upgrader{
@@ -28,6 +31,14 @@ type info struct {
 	Rooms []string `json:"rooms"`
 }
 
+type createRoomRequest struct {
+	Seats int
+}
+
+type config struct {
+	Frontend string `env:"FRONTEND"`
+}
+
 func StartServer() {
 	ctx := context.Background()
 	app, err := firebase.NewApp(ctx, nil)
@@ -43,38 +54,50 @@ func StartServer() {
 
 	server := server{rooms: make(map[string]room), app: app, firestore: firestore, ctx: ctx}
 
-	i := room{
-		make(map[*websocket.Conn]string),
-		make(chan wsCommand),
-		make(chan playersUpdate),
-		make(chan moneyUpdate),
-		make(chan []byte),
-		app,
-		firestore,
-		ctx,
-	}
+	server.addRoom("roomy", 6)
+	server.addRoom("another", 4)
 
-	j := room{
-		make(map[*websocket.Conn]string),
-		make(chan wsCommand),
-		make(chan playersUpdate),
-		make(chan moneyUpdate),
-		make(chan []byte),
-		app,
-		firestore,
-		ctx,
-	}
+	mux := http.NewServeMux()
 
-	server.addRoom("roomy", i)
-	server.addRoom("another", j)
-
-	http.HandleFunc("/room/{room}/ws", server.handleWebsocketConnections)
-	http.HandleFunc("/room/{room}", server.handleRoomRequest)
-	http.HandleFunc("/info", server.handleInfoRequest)
-	http.ListenAndServe(":8080", nil)
+	mux.HandleFunc("/room/{room}/ws", server.handleWebsocketConnections)
+	mux.HandleFunc("/room/{room}", server.handleRoomRequest)
+	mux.HandleFunc("/create", server.handleCreateRequest)
+	mux.HandleFunc("/info", server.handleInfoRequest)
+	http.ListenAndServe(":8080", checkCORS(mux))
 }
 
-func (server *server) addRoom(roomCode string, r room) {
+func checkCORS(next http.Handler) http.Handler {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("error loading .env file")
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == os.Getenv("FRONTEND") {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (server *server) addRoom(roomCode string, seats int) {
+	moneyChannel := make(chan moneyUpdate)
+	broadcastChannel := make(chan []byte)
+
+	r := room{
+		newTable(moneyChannel, broadcastChannel, seats),
+		make(map[*websocket.Conn]string),
+		make(chan wsCommand),
+		make(chan playersUpdate),
+		moneyChannel,
+		broadcastChannel,
+		server.app,
+		server.firestore,
+		server.ctx,
+	}
+
 	server.rooms[roomCode] = r
 	go r.startTable()
 	go r.broadcastMessages()
@@ -96,8 +119,6 @@ func (server *server) handleInfoRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// also fix this CORS issue
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusOK)
 	w.Write(out)
 }
@@ -114,19 +135,45 @@ func (server *server) handleRoomRequest(w http.ResponseWriter, r *http.Request) 
 		} else {
 			w.WriteHeader(http.StatusOK)
 		}
+	}
+}
 
+func (server *server) generateNewRoomCode() string {
+	characters := "abcdefghjkmnpqrstuvwxyz23456789"
+	code := make([]byte, 4)
+	for {
+		for i := 0; i < 4; i++ {
+			code[i] = characters[rand.Intn(len(characters))]
+		}
+
+		if _, ok := server.rooms[string(code)]; !ok {
+			break
+		}
+	}
+
+	return string(code)
+}
+
+func (server *server) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
 	case http.MethodPost:
-		// temporary room creation
-		server.addRoom(roomCode, room{
-			make(map[*websocket.Conn]string),
-			make(chan wsCommand),
-			make(chan playersUpdate),
-			make(chan moneyUpdate),
-			make(chan []byte),
-			server.app,
-			server.firestore,
-			server.ctx,
-		})
+		var req createRoomRequest
+		err := json.NewDecoder(r.Body).Decode(&req)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if req.Seats < 2 || req.Seats > 8 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		roomCode := server.generateNewRoomCode()
+		server.addRoom(roomCode, req.Seats)
+
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(roomCode))
 	}
 }
 

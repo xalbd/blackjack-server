@@ -32,22 +32,24 @@ type table struct {
 	Broadcast    chan []byte
 }
 
-func newTable(moneyUpdates chan moneyUpdate, broadcast chan []byte) table {
+func newTable(moneyUpdates chan moneyUpdate, broadcast chan []byte, seats int) table {
 	deck := makeDeck(1)
 	deck.shuffle()
 
-	return table{
+	t := table{
 		deck:         deck,
 		dealer:       Hand{},
 		minBet:       10,
-		seats:        6,
+		seats:        seats,
 		status:       Betting,
 		Players:      []player{},
-		Hands:        make([]Hand, 6),
+		Hands:        make([]Hand, seats),
 		ActiveHand:   -1,
 		MoneyUpdates: moneyUpdates,
 		Broadcast:    broadcast,
 	}
+
+	return t
 }
 
 func (t *table) resetHands() {

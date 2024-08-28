@@ -34,10 +34,6 @@ type createRoomRequest struct {
 	Seats int
 }
 
-type config struct {
-	Frontend string `env:"FRONTEND"`
-}
-
 func StartServer() {
 	ctx := context.Background()
 	app, err := firebase.NewApp(ctx, nil)

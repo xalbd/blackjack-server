@@ -23,7 +23,7 @@ func (table *table) handlePlayerUpdate(cmd playersUpdate) {
 	switch cmd.connect {
 	case true:
 		if table.playerWithUID(cmd.playerId) == nil {
-			table.Players = append(table.Players, player{UID: cmd.playerId, Money: cmd.money, active: true})
+			table.Players = append(table.Players, player{UID: cmd.playerId, DisplayName: cmd.displayName, active: true})
 		} else {
 			table.playerWithUID(cmd.playerId).active = true
 		}

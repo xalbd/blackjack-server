@@ -14,39 +14,42 @@ const (
 )
 
 type player struct {
-	UID    string `json:"id"`
-	Money  int64  `json:"money"`
-	active bool
+	UID         string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Money       int64  `json:"money"`
+	active      bool
 }
 
 type table struct {
-	deck         Deck
-	dealer       Hand
-	minBet       int64
-	seats        int
-	status       tableStatus
-	Players      []player
-	Hands        []Hand
-	ActiveHand   int
-	MoneyUpdates chan moneyUpdate
-	Broadcast    chan []byte
+	deck       Deck
+	dealer     Hand
+	minBet     int64
+	seats      int
+	status     tableStatus
+	Players    []player
+	Hands      []Hand
+	ActiveHand int
+	Broadcast  chan []byte
+	getMoney   func(string) int64
+	deltaMoney func(string, int64)
 }
 
-func newTable(moneyUpdates chan moneyUpdate, broadcast chan []byte, seats int) table {
+func newTable(broadcast chan []byte, seats int, getMoney func(string) int64, deltaMoney func(string, int64)) table {
 	deck := makeDeck(1)
 	deck.shuffle()
 
 	t := table{
-		deck:         deck,
-		dealer:       Hand{},
-		minBet:       10,
-		seats:        seats,
-		status:       Betting,
-		Players:      []player{},
-		Hands:        make([]Hand, seats),
-		ActiveHand:   -1,
-		MoneyUpdates: moneyUpdates,
-		Broadcast:    broadcast,
+		deck:       deck,
+		dealer:     Hand{},
+		minBet:     10,
+		seats:      seats,
+		status:     Betting,
+		Players:    []player{},
+		Hands:      make([]Hand, seats),
+		ActiveHand: -1,
+		Broadcast:  broadcast,
+		getMoney:   getMoney,
+		deltaMoney: deltaMoney,
 	}
 
 	return t
@@ -92,14 +95,13 @@ func (t *table) broadcast() {
 	} else {
 		d = t.dealer.Cards
 	}
+
+	for i := range t.Players {
+		t.Players[i].Money = t.getMoney(t.Players[i].UID)
+	}
+
 	out, _ := json.Marshal(broadcast{Dealer: d, Players: t.Players, Hands: t.Hands, ActiveHand: t.ActiveHand, TableStatus: t.status})
 	t.Broadcast <- out
-}
-
-// updates a player's money and sends message to mirror in Firebase
-func (t *table) updateMoney(uid string, money int64) {
-	t.playerWithUID(uid).Money = money
-	t.MoneyUpdates <- moneyUpdate{uid, money}
 }
 
 func (t *table) playerWithUID(uid string) *player {
@@ -116,9 +118,7 @@ func (t *table) currentHand() *Hand {
 }
 
 func (t *table) join(uid string, seat int) {
-	player := t.playerWithUID(uid)
-
-	if seat < 0 || seat >= t.seats || t.Hands[seat].PlayerUID != "" || player.Money < t.minBet {
+	if seat < 0 || seat >= t.seats || t.Hands[seat].PlayerUID != "" || t.getMoney(uid) < t.minBet {
 		return
 	}
 
@@ -138,11 +138,11 @@ func (t *table) leave(uid string, seat int) {
 func (t *table) enterBet(uid string, bet int64, seat int) {
 	player := t.playerWithUID(uid)
 
-	if player == nil || bet < t.minBet || bet > player.Money || seat < 0 || seat >= t.seats || t.Hands[seat].PlayerUID != uid || t.Hands[seat].Bet > 0 {
+	if player == nil || bet < t.minBet || bet > t.getMoney(uid) || seat < 0 || seat >= t.seats || t.Hands[seat].PlayerUID != uid || t.Hands[seat].Bet > 0 {
 		return
 	}
 
-	t.updateMoney(uid, player.Money-bet)
+	t.deltaMoney(uid, -bet)
 	t.Hands[seat].Bet = bet
 
 	t.broadcast()
@@ -195,9 +195,9 @@ func (t *table) dealerTurn() {
 		p := t.playerWithUID(h.PlayerUID)
 
 		if h.bestScore() > d {
-			t.updateMoney(p.UID, p.Money+2*h.Bet)
+			t.deltaMoney(p.UID, 2*h.Bet)
 		} else if h.bestScore() == d {
-			t.updateMoney(p.UID, p.Money+h.Bet)
+			t.deltaMoney(p.UID, h.Bet)
 		}
 
 		t.Hands[i].Bet = 0
@@ -215,8 +215,7 @@ func (t *table) hit() {
 // returns whether current hand can be doubled
 func (t *table) canDouble() bool {
 	hand := t.currentHand()
-	player := t.playerWithUID(hand.PlayerUID)
-	return player.Money >= hand.Bet
+	return t.getMoney(hand.PlayerUID) >= hand.Bet
 }
 
 // returns whether current hand can be split
@@ -232,7 +231,7 @@ func (t *table) double() bool {
 
 	if t.canDouble() {
 		t.hit()
-		t.updateMoney(player.UID, player.Money-hand.Bet)
+		t.deltaMoney(player.UID, -hand.Bet)
 		hand.Bet *= 2
 		return true
 	}
@@ -290,7 +289,7 @@ func (t *table) blackjack() bool {
 	player := t.playerWithUID(hand.PlayerUID)
 
 	if hand.hasBlackjack() {
-		t.updateMoney(player.UID, player.Money+(5*hand.Bet)/2)
+		t.deltaMoney(player.UID, 5*hand.Bet/2)
 		hand.Bet = 0
 		return true
 	}

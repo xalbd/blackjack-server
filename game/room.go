@@ -1,11 +1,8 @@
 package game
 
 import (
-	"context"
 	"log"
 
-	"cloud.google.com/go/firestore"
-	firebase "firebase.google.com/go/v4"
 	"github.com/gorilla/websocket"
 )
 
@@ -14,11 +11,7 @@ type room struct {
 	clients        map[*websocket.Conn]string
 	wsCommands     chan wsCommand
 	playersUpdates chan playersUpdate
-	moneyUpdates   chan moneyUpdate
 	broadcast      chan []byte
-	firebase       *firebase.App
-	firestore      *firestore.Client
-	ctx            context.Context // no clue what context actually is but I just pass this around everywhere it's requested
 }
 
 type wsCommand struct {
@@ -27,14 +20,9 @@ type wsCommand struct {
 }
 
 type playersUpdate struct {
-	playerId string
-	money    int64
-	connect  bool
-}
-
-type moneyUpdate struct {
-	UID   string
-	Money int64
+	playerId    string
+	displayName string
+	connect     bool
 }
 
 func (room *room) removePlayer(c *websocket.Conn) {
@@ -47,7 +35,7 @@ func (room *room) removePlayer(c *websocket.Conn) {
 	}
 
 	if allGone {
-		room.playersUpdates <- playersUpdate{room.clients[c], 0, false}
+		room.playersUpdates <- playersUpdate{playerId: room.clients[c], connect: false}
 	}
 	delete(room.clients, c)
 }
@@ -74,15 +62,5 @@ func (room *room) broadcastMessages() {
 				log.Println("error sending to websocket:", err)
 			}
 		}
-	}
-}
-
-func (room *room) updateMoney() {
-	for {
-		moneyUpdate := <-room.moneyUpdates
-		room.firestore.Collection("users").Doc(moneyUpdate.UID).Set(room.ctx,
-			map[string]interface{}{
-				"money": moneyUpdate.Money,
-			})
 	}
 }

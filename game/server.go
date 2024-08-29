@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -15,18 +16,21 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	// TODO: add origin check
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		return r.Header.Get("Origin") == os.Getenv("FRONTEND")
+	},
 }
 
 type server struct {
-	rooms     map[string]room
-	app       *firebase.App
-	firestore *firestore.Client
-	ctx       context.Context
+	rooms      map[string]room
+	players    map[string]int64
+	playerLock sync.RWMutex
+	firebase   *firebase.App
+	firestore  *firestore.Client
+	ctx        context.Context // TODO: still no idea what context actually is but keeping it here seems fine (?)
 }
 
-type info struct {
+type infoResponse struct {
 	Rooms []string `json:"rooms"`
 }
 
@@ -47,7 +51,13 @@ func StartServer() {
 	}
 	defer firestore.Close()
 
-	server := server{rooms: make(map[string]room), app: app, firestore: firestore, ctx: ctx}
+	server := server{
+		rooms:     make(map[string]room),
+		players:   make(map[string]int64),
+		firebase:  app,
+		firestore: firestore,
+		ctx:       ctx,
+	}
 
 	server.addRoom("roomy", 6)
 	server.addRoom("another", 4)
@@ -73,29 +83,23 @@ func checkCORS(next http.Handler) http.Handler {
 }
 
 func (server *server) addRoom(roomCode string, seats int) {
-	moneyChannel := make(chan moneyUpdate)
 	broadcastChannel := make(chan []byte)
 
 	r := room{
-		newTable(moneyChannel, broadcastChannel, seats),
+		newTable(broadcastChannel, seats, server.getMoney, server.deltaMoney),
 		make(map[*websocket.Conn]string),
 		make(chan wsCommand),
 		make(chan playersUpdate),
-		moneyChannel,
 		broadcastChannel,
-		server.app,
-		server.firestore,
-		server.ctx,
 	}
 
 	server.rooms[roomCode] = r
 	go r.startTable()
 	go r.broadcastMessages()
-	go r.updateMoney()
 }
 
 func (server *server) handleInfoRequest(w http.ResponseWriter, r *http.Request) {
-	info := info{make([]string, len(server.rooms))}
+	info := infoResponse{make([]string, len(server.rooms))}
 
 	i := 0
 	for k := range server.rooms {
@@ -142,6 +146,31 @@ func (server *server) generateNewRoomCode() string {
 	}
 
 	return string(code)
+}
+
+func (server *server) setMoney(uid string, amount int64) {
+	server.playerLock.Lock()
+	// prevent race condition by allowing initial money to be set only once
+	if _, ok := server.players[uid]; !ok {
+		server.players[uid] = amount
+	}
+	server.playerLock.Unlock()
+}
+
+func (server *server) deltaMoney(uid string, delta int64) {
+	server.playerLock.Lock()
+	server.players[uid] += delta
+	go server.firestore.Collection("users").Doc(uid).Set(server.ctx,
+		map[string]interface{}{
+			"money": server.players[uid],
+		})
+	server.playerLock.Unlock()
+}
+
+func (server *server) getMoney(uid string) int64 {
+	server.playerLock.RLock()
+	defer server.playerLock.RUnlock()
+	return server.players[uid]
 }
 
 func (server *server) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
@@ -191,33 +220,41 @@ func (server *server) handleWebsocketConnections(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// authorize user with firebase
-	client, err := room.firebase.Auth(room.ctx)
+	// authorize user with firebase & create/grab firestore document
+	client, err := server.firebase.Auth(server.ctx)
 	if err != nil {
 		log.Println("error fetching firebase auth client:", err)
 		return
 	}
 
-	token, err := client.VerifyIDToken(room.ctx, string(message))
+	token, err := client.VerifyIDToken(server.ctx, string(message))
 	if err != nil {
 		log.Println("error verifying auth token:", err)
 		return
 	}
 
-	room.firestore.Collection("users").Doc(token.UID).Create(room.ctx,
+	server.firestore.Collection("users").Doc(token.UID).Create(server.ctx,
 		map[string]interface{}{
 			"money": 1000,
 		})
 
-	player, err := room.firestore.Collection("users").Doc(token.UID).Get(room.ctx)
+	player, err := server.firestore.Collection("users").Doc(token.UID).Get(server.ctx)
 	if err != nil {
 		log.Println("error fetching user money:", err)
 		return
 	}
 
+	// grab display name
+	ur, err := client.GetUser(server.ctx, token.UID)
+	if err != nil {
+		log.Println("error fetching user information:", err)
+		return
+	}
+
 	// track authorized user and notify other players
 	room.clients[c] = token.UID
-	room.playersUpdates <- playersUpdate{room.clients[c], player.Data()["money"].(int64), true}
+	room.playersUpdates <- playersUpdate{room.clients[c], ur.DisplayName, true}
+	server.setMoney(token.UID, player.Data()["money"].(int64))
 	defer room.removePlayer(c)
 
 	for {

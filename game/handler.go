@@ -2,6 +2,7 @@ package game
 
 import (
 	"encoding/json"
+	"time"
 )
 
 type playerCommand struct {
@@ -17,6 +18,7 @@ type broadcast struct {
 	Hands       []Hand      `json:"hands"`
 	ActiveHand  int         `json:"activeHand"`
 	TableStatus tableStatus `json:"status"`
+	Time        int64       `json:"time"`
 }
 
 func (table *table) handlePlayerUpdate(cmd playersUpdate) {
@@ -47,25 +49,36 @@ func (table *table) handlePlayerUpdate(cmd playersUpdate) {
 	}
 }
 
-func (table *table) handleCommand(cmd wsCommand) {
+func (table *table) handleWSCommand(cmd wsCommand) {
 	var pc playerCommand
 	err := json.Unmarshal(cmd.message, &pc)
 	if err != nil {
 		return
 	}
 
-	switch pc.Action {
+	table.handleCommand(cmd.playerId, pc)
+}
+
+func (table *table) handleCommand(uid string, cmd playerCommand) {
+	switch cmd.Action {
 	case "join":
-		table.join(cmd.playerId, pc.Seat)
+		table.join(uid, cmd.Seat)
 	case "leave":
-		table.leave(cmd.playerId, pc.Seat)
+		table.leave(uid, cmd.Seat)
 	}
 
 	switch table.status {
 	case Betting:
-		table.handleBettingCommand(cmd.playerId, pc)
+		table.handleBettingCommand(uid, cmd)
 	case PlayerTurn:
-		table.handleActionCommand(cmd.playerId, pc)
+		table.handleActionCommand(uid, cmd)
+	}
+}
+
+func (table *table) handleNullAction() {
+	switch table.status {
+	case PlayerTurn:
+		table.advanceHand()
 	}
 }
 
@@ -92,21 +105,23 @@ func (table *table) handleActionCommand(uid string, cmd playerCommand) {
 		return
 	}
 
-	end := false
+	end, success := false, false
 	switch cmd.Action {
 	case "hit":
-		table.hit()
+		success = table.hit()
 	case "stand":
-		end = true
+		end, success = true, true
 	case "double":
 		end = table.double()
+		success = end
 	case "split":
-		table.split()
+		success = table.split()
 	}
-
-	table.broadcast()
 
 	if end || table.bust() || table.Hands[table.ActiveHand].bestScore() == 21 {
 		table.advanceHand()
+	} else if success {
+		table.actionTimeStart = time.Now()
+		table.broadcast()
 	}
 }

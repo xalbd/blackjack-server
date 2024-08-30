@@ -3,6 +3,7 @@ package game
 import (
 	"encoding/json"
 	"slices"
+	"time"
 )
 
 type tableStatus int
@@ -21,17 +22,19 @@ type player struct {
 }
 
 type table struct {
-	deck       Deck
-	dealer     Hand
-	minBet     int64
-	seats      int
-	status     tableStatus
-	Players    []player
-	Hands      []Hand
-	ActiveHand int
-	Broadcast  chan []byte
-	getMoney   func(string) int64
-	deltaMoney func(string, int64)
+	deck            Deck
+	dealer          Hand
+	minBet          int64
+	seats           int
+	status          tableStatus
+	Players         []player
+	Hands           []Hand
+	ActiveHand      int
+	actionTimeStart time.Time
+	moveTimeLimit   time.Duration
+	Broadcast       chan []byte
+	getMoney        func(string) int64
+	deltaMoney      func(string, int64)
 }
 
 func newTable(broadcast chan []byte, seats int, getMoney func(string) int64, deltaMoney func(string, int64)) table {
@@ -39,17 +42,19 @@ func newTable(broadcast chan []byte, seats int, getMoney func(string) int64, del
 	deck.shuffle()
 
 	t := table{
-		deck:       deck,
-		dealer:     Hand{},
-		minBet:     10,
-		seats:      seats,
-		status:     Betting,
-		Players:    []player{},
-		Hands:      make([]Hand, seats),
-		ActiveHand: -1,
-		Broadcast:  broadcast,
-		getMoney:   getMoney,
-		deltaMoney: deltaMoney,
+		deck:            deck,
+		dealer:          Hand{},
+		minBet:          10,
+		seats:           seats,
+		status:          Betting,
+		Players:         []player{},
+		Hands:           make([]Hand, seats),
+		actionTimeStart: time.Now(),
+		moveTimeLimit:   5 * time.Second,
+		ActiveHand:      -1,
+		Broadcast:       broadcast,
+		getMoney:        getMoney,
+		deltaMoney:      deltaMoney,
 	}
 
 	return t
@@ -100,7 +105,14 @@ func (t *table) broadcast() {
 		t.Players[i].Money = t.getMoney(t.Players[i].UID)
 	}
 
-	out, _ := json.Marshal(broadcast{Dealer: d, Players: t.Players, Hands: t.Hands, ActiveHand: t.ActiveHand, TableStatus: t.status})
+	out, _ := json.Marshal(broadcast{
+		Dealer:      d,
+		Players:     t.Players,
+		Hands:       t.Hands,
+		ActiveHand:  t.ActiveHand,
+		TableStatus: t.status,
+		Time:        t.actionTimeStart.UnixMilli(),
+	})
 	t.Broadcast <- out
 }
 
@@ -157,7 +169,6 @@ func (t *table) dealAll() {
 		}
 		t.deck.dealTo(&t.dealer)
 	}
-	t.broadcast()
 }
 
 func (t *table) allBetsIn() bool {
@@ -208,8 +219,9 @@ func (t *table) dealerTurn() {
 }
 
 // deals a card to the current hand
-func (t *table) hit() {
+func (t *table) hit() bool {
 	t.deck.dealTo(t.currentHand())
+	return true
 }
 
 // returns whether current hand can be doubled
@@ -260,6 +272,8 @@ func (table *table) advanceHand() {
 		table.ActiveHand++
 	}
 
+	// new player's turn is active
+	table.actionTimeStart = time.Now()
 	table.broadcast()
 
 	if table.ActiveHand >= len(table.Hands) {

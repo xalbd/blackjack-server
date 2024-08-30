@@ -2,6 +2,7 @@ package game
 
 import (
 	"log"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -45,8 +46,10 @@ func (room *room) startTable() {
 
 	for {
 		select {
+		case <-time.After(room.table.moveTimeLimit + time.Second - time.Since(room.table.actionTimeStart)):
+			room.table.handleNullAction()
 		case command := <-room.wsCommands:
-			room.table.handleCommand(command)
+			room.table.handleWSCommand(command)
 		case playerUpdate := <-room.playersUpdates:
 			room.table.handlePlayerUpdate(playerUpdate)
 		}

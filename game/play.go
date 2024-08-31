@@ -91,6 +91,13 @@ func (t *table) resetHands() {
 	}
 	t.Players = t.Players[:p]
 
+	// clean up hands of players that left
+	for i := range t.Hands {
+		if t.playerWithUID(t.Hands[i].PlayerUID) == nil {
+			t.Hands[i].PlayerUID = ""
+		}
+	}
+
 	t.broadcast()
 }
 

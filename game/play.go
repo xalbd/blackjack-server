@@ -22,19 +22,21 @@ type player struct {
 }
 
 type table struct {
-	deck            Deck
-	dealer          Hand
-	minBet          int64
-	seats           int
-	status          tableStatus
-	Players         []player
-	Hands           []Hand
-	ActiveHand      int
-	actionTimeStart time.Time
-	moveTimeLimit   time.Duration
-	Broadcast       chan []byte
-	getMoney        func(string) int64
-	deltaMoney      func(string, int64)
+	deck                  Deck
+	dealer                Hand
+	minBet                int64
+	seats                 int
+	status                tableStatus
+	Players               []player
+	Hands                 []Hand
+	ActiveHand            int
+	actionTimeStart       time.Time
+	beginBettingTimeLimit bool
+	moveTimeLimit         time.Duration
+	bettingTimeLimit      time.Duration
+	Broadcast             chan []byte
+	getMoney              func(string) int64
+	deltaMoney            func(string, int64)
 }
 
 func newTable(broadcast chan []byte, seats int, getMoney func(string) int64, deltaMoney func(string, int64)) table {
@@ -42,19 +44,21 @@ func newTable(broadcast chan []byte, seats int, getMoney func(string) int64, del
 	deck.shuffle()
 
 	t := table{
-		deck:            deck,
-		dealer:          Hand{},
-		minBet:          10,
-		seats:           seats,
-		status:          Betting,
-		Players:         []player{},
-		Hands:           make([]Hand, seats),
-		actionTimeStart: time.Now(),
-		moveTimeLimit:   5 * time.Second,
-		ActiveHand:      -1,
-		Broadcast:       broadcast,
-		getMoney:        getMoney,
-		deltaMoney:      deltaMoney,
+		deck:                  deck,
+		dealer:                Hand{},
+		minBet:                10,
+		seats:                 seats,
+		status:                Betting,
+		Players:               []player{},
+		Hands:                 make([]Hand, seats),
+		actionTimeStart:       time.Now(),
+		beginBettingTimeLimit: false,
+		moveTimeLimit:         5 * time.Second,
+		bettingTimeLimit:      15 * time.Second,
+		ActiveHand:            -1,
+		Broadcast:             broadcast,
+		getMoney:              getMoney,
+		deltaMoney:            deltaMoney,
 	}
 
 	return t
@@ -154,6 +158,12 @@ func (t *table) enterBet(uid string, bet int64, seat int) {
 		return
 	}
 
+	// set flag for main game loop to start betting time limit once someone has put an initial bet in
+	if !t.someBetsIn() {
+		t.beginBettingTimeLimit = true
+		t.actionTimeStart = time.Now()
+	}
+
 	t.deltaMoney(uid, -bet)
 	t.Hands[seat].Bet = bet
 
@@ -169,6 +179,16 @@ func (t *table) dealAll() {
 		}
 		t.deck.dealTo(&t.dealer)
 	}
+}
+
+func (t *table) someBetsIn() bool {
+	for i := range t.Hands {
+		if t.Hands[i].Bet != 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (t *table) allBetsIn() bool {
@@ -187,6 +207,16 @@ func (t *table) allBetsIn() bool {
 	}
 
 	return bets > 0
+}
+
+func (t *table) startPlayerTurn() {
+	t.status = PlayerTurn
+	t.dealAll()
+	if t.dealer.hasBlackjack() {
+		t.dealerTurn()
+	} else {
+		t.advanceHand()
+	}
 }
 
 func (t *table) dealerTurn() {

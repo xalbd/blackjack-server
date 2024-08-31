@@ -77,6 +77,15 @@ func (table *table) handleCommand(uid string, cmd playerCommand) {
 
 func (table *table) handleNullAction() {
 	switch table.status {
+	case Betting:
+		for i := range table.Hands {
+			if table.Hands[i].PlayerUID != "" && table.Hands[i].Bet == 0 {
+				table.Hands[i].PlayerUID = ""
+			}
+		}
+		table.broadcast()
+		table.startPlayerTurn()
+
 	case PlayerTurn:
 		table.advanceHand()
 	}
@@ -89,13 +98,7 @@ func (table *table) handleBettingCommand(uid string, cmd playerCommand) {
 	}
 
 	if table.allBetsIn() {
-		table.status = PlayerTurn
-		table.dealAll()
-		if table.dealer.hasBlackjack() {
-			table.dealerTurn()
-		} else {
-			table.advanceHand()
-		}
+		table.startPlayerTurn()
 	}
 }
 

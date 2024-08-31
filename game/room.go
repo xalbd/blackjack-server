@@ -44,14 +44,29 @@ func (room *room) removePlayer(c *websocket.Conn) {
 func (room *room) startTable() {
 	room.table.resetHands()
 
+	nullActionTimer := time.NewTimer(0)
+	defer nullActionTimer.Stop()
+
 	for {
+		switch room.table.status {
+		case Betting:
+			if room.table.beginBettingTimeLimit {
+				room.table.beginBettingTimeLimit = false
+				nullActionTimer.Reset(room.table.bettingTimeLimit + time.Second)
+			} else if !room.table.someBetsIn() {
+				nullActionTimer.Stop()
+			}
+		case PlayerTurn:
+			nullActionTimer.Reset(room.table.moveTimeLimit + time.Second)
+		}
+
 		select {
-		case <-time.After(room.table.moveTimeLimit + time.Second - time.Since(room.table.actionTimeStart)):
-			room.table.handleNullAction()
 		case command := <-room.wsCommands:
 			room.table.handleWSCommand(command)
 		case playerUpdate := <-room.playersUpdates:
 			room.table.handlePlayerUpdate(playerUpdate)
+		case <-nullActionTimer.C:
+			room.table.handleNullAction()
 		}
 	}
 }

@@ -30,8 +30,14 @@ type server struct {
 	ctx        context.Context // TODO: still no idea what context actually is but keeping it here seems fine (?)
 }
 
+type roomInfo struct {
+	Code       string `json:"code"`
+	Seats      int    `json:"seats"`
+	TakenSeats int    `json:"takenSeats"`
+}
+
 type infoResponse struct {
-	Rooms []string `json:"rooms"`
+	Rooms []roomInfo `json:"rooms"`
 }
 
 type createRoomRequest struct {
@@ -99,11 +105,13 @@ func (server *server) addRoom(roomCode string, seats int) {
 }
 
 func (server *server) handleInfoRequest(w http.ResponseWriter, r *http.Request) {
-	info := infoResponse{make([]string, len(server.rooms))}
+	info := infoResponse{make([]roomInfo, len(server.rooms))}
 
 	i := 0
-	for k := range server.rooms {
-		info.Rooms[i] = k
+	for k, v := range server.rooms {
+		info.Rooms[i].Code = k
+		info.Rooms[i].Seats = v.table.seats
+		info.Rooms[i].TakenSeats = v.table.seatsTaken()
 		i++
 	}
 

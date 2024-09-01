@@ -198,6 +198,16 @@ func (t *table) someBetsIn() bool {
 	return false
 }
 
+func (t *table) seatsTaken() int {
+	seats := 0
+	for i := range t.Hands {
+		if t.Hands[i].PlayerUID != "" {
+			seats++
+		}
+	}
+	return seats
+}
+
 func (t *table) allBetsIn() bool {
 	bets := 0
 

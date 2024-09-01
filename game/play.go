@@ -68,6 +68,7 @@ func (t *table) resetHands() {
 	t.ActiveHand = -1
 	t.status = Betting
 	t.dealer = Hand{}
+	t.beginBettingTimeLimit = false
 
 	// reset hands and remove split hands
 	h := 0
